@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Unity](https://img.shields.io/badge/unity-2021.1%2B-green.svg)](https://unity3d.com/get-unity/download)
-[![Netcode](https://img.shields.io/badge/netcode-v1.0.0-orange.svg)](https://github.com/your-username/netcode-repo)
+![Netcode](https://img.shields.io/badge/netcode-v1.5.0-orange.svg)
 
 This repository contains a sample project demonstrating the implementation of Netcode for Game Objects in Unity. Netcode for Game Objects is a network library for Unity that simplifies the process of synchronizing game objects across the network.
 
@@ -36,7 +36,7 @@ Feel free to explore the code in the `Assets/Scripts` folder to understand how t
 
 ## Documentation
 
-Detailed documentation for the Netcode for Game Objects library can be found in the [Wiki](https://github.com/your-username/netcode-repo/wiki) of this repository. The Wiki provides information about the library's architecture, usage guidelines, and advanced features.
+Coming soon...
 
 ## Contributing
 
@@ -52,9 +52,9 @@ This project was inspired by the Netcode for Game Objects library developed by U
 
 ## Contact
 
-For any inquiries or feedback, please contact:
+For any inquiries or feedback, please contact: 
 
 Your Name  
-Email: your-email@example.com
+Email: patirishavnath@gmail.com
 
 If you have any questions about using the Netcode for Game Objects library, please check out the [Unity Forums](https://forum.unity.com/).
