@@ -1,19 +1,31 @@
-using System.Text;
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using Unity.Netcode;
 using UnityEngine;
 
 public class PlayerNetwork : NetworkBehaviour
 {
     private const float MovementSpeed = 10f;
+    private const int SampleRate = 44100 / 2;
+    private const int MaxRecordingTime = 10;
+    private const int ChunkSize = 1024;
 
-    private readonly NetworkVariable<CustomData> _randomNumber = new(new CustomData
-    {
-        IntValue = 5,
-        BoolValue = false
-    }, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
+    private readonly NetworkVariable<int> _randomInt = new(
+        0,
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Owner);
 
-    private NetworkVariable<int> _randomInt = new(0, NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Owner);
-    
+    private readonly NetworkVariable<CustomData> _randomNumber = new(
+        new CustomData { IntValue = 5, BoolValue = false },
+        NetworkVariableReadPermission.Everyone,
+        NetworkVariableWritePermission.Owner);
+
+    private AudioClip _clip;
+    private int _lastSample;
+
+    private readonly List<byte[]> audioChunks = new();
+
     private void Update()
     {
         if (!IsOwner) return;
@@ -27,16 +39,6 @@ public class PlayerNetwork : NetworkBehaviour
         _randomInt.OnValueChanged += LogIntChange;
         _randomNumber.OnValueChanged += LogCustomDataChange;
     }
-    
-    private void LogIntChange(int previousValue, int newValue)
-    {
-        Debug.Log($"Owner Client ID: {OwnerClientId}, Random Int : {newValue}");
-    }
-
-    private void LogCustomDataChange(CustomData previousValue, CustomData newValue)
-    {
-        Debug.Log($"Owner Client ID: {OwnerClientId}, Custom Data : {newValue.IntValue} {newValue.BoolValue}");
-    }
 
     private void HandleMovement()
     {
@@ -49,38 +51,115 @@ public class PlayerNetwork : NetworkBehaviour
     {
         if (Input.GetKeyDown(KeyCode.Alpha1))
         {
-            _randomInt.Value = Random.Range(0, 100);
-            _randomNumber.Value = new CustomData
-            {
-                IntValue = Random.Range(0, 100),
-                BoolValue = Random.Range(0, 2) == 1
-            };
+            StartRecording();
         }
-        
-        else if (Input.GetKeyDown(KeyCode.Alpha2))
+        else if (Input.GetKeyUp(KeyCode.Alpha1))
         {
-            string author = "Rishav Nath Pati";
-            byte[] bytes = Encoding.ASCII.GetBytes(author);
-            
-            NotifyServerRpc(bytes);
+            StopRecording();
+            SendAudio();
         }
-        
-        // NotifyClientRpc(_randomNumber);
+    }
+
+    private void StartRecording()
+    {
+        _clip = Microphone.Start(null, true, MaxRecordingTime, SampleRate);
+    }
+
+    private void StopRecording()
+    {
+        if (Microphone.IsRecording(null))
+        {
+            // Save the current microphone device position
+            _lastSample = Microphone.GetPosition(null);
+
+            // Stop recording
+            Microphone.End(null);
+        }
+    }
+
+    private void LogIntChange(int previousValue, int newValue)
+    {
+        Debug.Log($"Owner Client ID: {OwnerClientId}, Random Int : {newValue}");
+    }
+
+    private void LogCustomDataChange(CustomData previousValue, CustomData newValue)
+    {
+        Debug.Log($"Owner Client ID: {OwnerClientId}, Custom Data : {newValue.IntValue} {newValue.BoolValue}");
     }
 
     [ServerRpc]
-    private void NotifyServerRpc(byte[] bytes)
+    private void SendAudioToServerRpc(byte[] audioBytes)
     {
-        // Convert a byte array to a C# string.
-        
-        Debug.Log($"ServerRpc called {OwnerClientId} {Encoding.ASCII.GetString(bytes)}");
+        Debug.Log($"Audio chunk received from client {OwnerClientId}. Length: {audioBytes.Length} bytes");
+
+        // Save the received audio chunk
+        audioChunks.Add(audioBytes);
+
+        // If the size of the chunk is less than the maximum chunk size, this is the last chunk
+        if (audioBytes.Length < ChunkSize)
+        {
+            // Concatenate all audio chunks into a single byte array
+            var totalSize = audioChunks.Sum(chunk => chunk.Length);
+            var allAudioBytes = new byte[totalSize];
+            var offset = 0;
+            foreach (var chunk in audioChunks)
+            {
+                Buffer.BlockCopy(chunk, 0, allAudioBytes, offset, chunk.Length);
+                offset += chunk.Length;
+            }
+
+            // Convert the byte array to an AudioClip
+            var clip = ToAudioClip(allAudioBytes);
+
+            // Play the AudioClip
+            var audioSource = GetComponent<AudioSource>();
+            if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+            audioSource.clip = clip;
+            audioSource.Play();
+
+            // Clear the audio chunks for the next audio message
+            audioChunks.Clear();
+        }
     }
 
-    // [ClientRpc]
-    // private void NotifyClientRpc(NetworkVariable<CustomData> message)
-    // {
-    //     Debug.Log($"ClientRpc called {OwnerClientId} {message.Value} {message.Value.IntValue} {message.Value.BoolValue}");
-    // }
+    private AudioClip ToAudioClip(byte[] audioBytes)
+    {
+        // Convert the byte array back into a float array
+        var samples = new float[audioBytes.Length / 4];
+        Buffer.BlockCopy(audioBytes, 0, samples, 0, audioBytes.Length);
+
+        // Create the AudioClip
+        var clip = AudioClip.Create("ServerAudio", samples.Length, 1, SampleRate, false);
+        clip.SetData(samples, 0);
+
+        return clip;
+    }
+
+
+    private void SendAudio()
+    {
+        if (_clip == null)
+        {
+            Debug.LogError("No audio clip to send");
+            return;
+        }
+
+        var samples = new float[_lastSample];
+        _clip.GetData(samples, 0);
+
+        // Convert float array to byte array
+        var audioBytes = new byte[samples.Length * 4];
+        Buffer.BlockCopy(samples, 0, audioBytes, 0, audioBytes.Length);
+
+        // Send the audio data in chunks
+        for (var i = 0; i < audioBytes.Length; i += ChunkSize)
+        {
+            var chunk = new byte[Mathf.Min(ChunkSize, audioBytes.Length - i)];
+            Array.Copy(audioBytes, i, chunk, 0, chunk.Length);
+            SendAudioToServerRpc(chunk);
+        }
+    }
+
 
     private struct CustomData : INetworkSerializable
     {
