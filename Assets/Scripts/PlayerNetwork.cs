@@ -10,6 +10,8 @@ public class PlayerNetwork : NetworkBehaviour
     private const int SampleRate = 44100 / 2;
     private const int MaxRecordingTime = 10;
     private const int ChunkSize = 1024;
+    
+    [SerializeField] Transform spawnObjectPrefab;
 
     private readonly NetworkVariable<int> _randomInt = new(
         0,
@@ -25,6 +27,7 @@ public class PlayerNetwork : NetworkBehaviour
     private int _lastSample;
 
     private readonly List<byte[]> audioChunks = new();
+    [SerializeField] private Camera PlayerCamera;
 
     private void Update()
     {
@@ -38,6 +41,12 @@ public class PlayerNetwork : NetworkBehaviour
     {
         _randomInt.OnValueChanged += LogIntChange;
         _randomNumber.OnValueChanged += LogCustomDataChange;
+        
+        // If this is not the local player, return
+        if (!IsOwner) return;
+        
+        // If this is the local player, enable the camera
+        PlayerCamera.transform.gameObject.SetActive(true);
     }
 
     private void HandleMovement()
@@ -58,6 +67,29 @@ public class PlayerNetwork : NetworkBehaviour
             StopRecording();
             SendAudio();
         }
+        
+        if(Input.GetKeyDown(KeyCode.Alpha2))
+        {
+            RequestSpawnClientRpc();
+        }
+    }
+    
+    [ServerRpc]
+    public void RequestSpawnServerRpc()
+    {
+        if (IsOwner)
+        {
+            var spawnObject = Instantiate(spawnObjectPrefab, transform.position, Quaternion.identity);
+            spawnObject.position += new Vector3(UnityEngine.Random.Range(-5, 5), 0, UnityEngine.Random.Range(-5, 5));
+            spawnObject.GetComponent<NetworkObject>().Spawn(true);
+        }
+        
+    }
+    
+    [ClientRpc]
+    public void RequestSpawnClientRpc()
+    {
+        RequestSpawnServerRpc();
     }
 
     private void StartRecording()
